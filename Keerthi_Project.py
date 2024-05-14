@@ -106,13 +106,26 @@ def read_patient_data(file_path):
         if file_path.lower().endswith('.csv'):
             reader = csv.DictReader(file)
             for row in reader:
-                patient_id = row['Patient_ID']
-                if patient_id not in hospital.patients:
-                    patient = Patient(patient_id, row['Gender'], row['Race'], int(row['Age']), row['Ethnicity'], row['Insurance'], row['Zip_code'])
+                patient_id = row.get('Patient_ID')
+                if patient_id:
+                    gender = row.get('Gender', '')
+                    race = row.get('Race', '')
+                    age = int(row.get('Age', 0))
+                    ethnicity = row.get('Ethnicity', '')
+                    insurance = row.get('Insurance', '')
+                    zip_code = row.get('Zip_code', '')  # Check if Zip_code exists
+                    patient = Patient(patient_id, gender, race, age, ethnicity, insurance, zip_code)
                     hospital.add_patient(patient)
-                visit = Visit(row['Visit_ID'], datetime.strptime(row['Visit_time'], '%Y-%m-%d'), row['Visit_department'], row['Chief_complaint'])
-                patient.add_visit(visit)
+                    visit_id = row.get('Visit_ID', '')
+                    visit_time_str = row.get('Visit_time', '')
+                    visit_time = datetime.strptime(visit_time_str, '%Y-%m-%d') if visit_time_str else None
+                    visit_department = row.get('Visit_department', '')
+                    chief_complaint = row.get('Chief_complaint', '')
+                    if visit_id and visit_time and visit_department and chief_complaint:
+                        visit = Visit(visit_id, visit_time, visit_department, chief_complaint)
+                        patient.add_visit(visit)
     return hospital
+
 
 def write_patient_data(file_path, hospital):
     with open(file_path, 'w', newline='') as file:
@@ -153,6 +166,7 @@ def generate_key_statistics(hospital):
         key_stats += f"{department}: {count}\n"
 
     return key_stats
+
 
 def add_patient_ui(hospital, patient_id, visit_time, visit_department, chief_complaint):
     if patient_id in hospital.patients:
@@ -224,6 +238,11 @@ def read_users(file_path):
             users.append(User(username, password, role))
     return users
 
+def write_usage_statistics(file_path, username, role, action):
+    with open(file_path, 'a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([username, role, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), action])
+
 WINDOW_WIDTH = 1300
 WINDOW_HEIGHT = 700
 
@@ -245,8 +264,10 @@ def main():
             current_user_role = role
             hospital = read_patient_data('Project_patient_information.csv')
             show_menu()
+            write_usage_statistics('usage_statistics.csv', username, role, 'Login')
         else:
             messagebox.showerror("Login Failed", "Invalid username or password")
+            write_usage_statistics('usage_statistics.csv', username, 'Unknown', 'Failed Login Attempt')
 
     def show_menu():
         menu_window = tk.Toplevel(root)
@@ -276,10 +297,14 @@ def main():
         exit_button = tk.Button(menu_window, text="Exit", command=root.destroy)
         exit_button.pack(pady=10)
 
+        menu_window.mainloop()
+
+
     def generate_key_stats():
         if current_user_role in ["admin", "management"]:
             stats = generate_key_statistics(hospital)
             messagebox.showinfo("Key Statistics", stats)
+            write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Generate Key Statistics')
         else:
             messagebox.showerror("Unauthorized", "You are not authorized to view key statistics.")
 
@@ -300,7 +325,7 @@ def main():
     def check_patient(patient_id, window):
         if patient_id in hospital.patients:
             visit_time_window = tk.Toplevel(window)
-            visit_time_window.title("Enter Visit Details")
+            visit_time_window.title("Enter Visit Time")
             visit_time_window.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 
             visit_time_label = tk.Label(visit_time_window, text="Visit Time (YYYY-MM-DD):")
@@ -309,11 +334,11 @@ def main():
             visit_time_entry = tk.Entry(visit_time_window)
             visit_time_entry.grid(row=0, column=1, padx=10, pady=10)
 
-            department_label = tk.Label(visit_time_window, text="Visit Department:")
-            department_label.grid(row=1, column=0, padx=10, pady=10)
+            visit_department_label = tk.Label(visit_time_window, text="Visit Department:")
+            visit_department_label.grid(row=1, column=0, padx=10, pady=10)
 
-            department_entry = tk.Entry(visit_time_window)
-            department_entry.grid(row=1, column=1, padx=10, pady=10)
+            visit_department_entry = tk.Entry(visit_time_window)
+            visit_department_entry.grid(row=1, column=1, padx=10, pady=10)
 
             chief_complaint_label = tk.Label(visit_time_window, text="Chief Complaint:")
             chief_complaint_label.grid(row=2, column=0, padx=10, pady=10)
@@ -321,24 +346,14 @@ def main():
             chief_complaint_entry = tk.Entry(visit_time_window)
             chief_complaint_entry.grid(row=2, column=1, padx=10, pady=10)
 
-            add_visit_button = tk.Button(visit_time_window, text="Add Visit", command=lambda: add_visit(patient_id, visit_time_entry.get(), department_entry.get(), chief_complaint_entry.get(), visit_time_window))
+            add_visit_button = tk.Button(visit_time_window, text="Add Visit", command=lambda: add_visit(patient_id, visit_time_entry.get(), visit_department_entry.get(), chief_complaint_entry.get(), visit_time_window))
             add_visit_button.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
         else:
             add_patient_details(patient_id, window)
 
-    def add_visit(patient_id, visit_time, visit_department, chief_complaint, window):
-        visit_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-        visit = Visit(visit_id, datetime.strptime(visit_time, '%Y-%m-%d'), visit_department, chief_complaint)
-        hospital.patients[patient_id].add_visit(visit)
-
-        messagebox.showinfo("Add Visit Result", "Visit added successfully.")
-        window.destroy()
-        show_menu()  # Return to menu after action
-
     def add_patient_details(patient_id, window):
         add_patient_details_window = tk.Toplevel(window)
-        add_patient_details_window.title("Enter Patient Details")
+        add_patient_details_window.title("Add Patient Details")
         add_patient_details_window.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 
         gender_label = tk.Label(add_patient_details_window, text="Gender:")
@@ -383,11 +398,11 @@ def main():
         visit_time_entry = tk.Entry(add_patient_details_window)
         visit_time_entry.grid(row=6, column=1, padx=10, pady=10)
 
-        department_label = tk.Label(add_patient_details_window, text="Visit Department:")
-        department_label.grid(row=7, column=0, padx=10, pady=10)
+        visit_department_label = tk.Label(add_patient_details_window, text="Visit Department:")
+        visit_department_label.grid(row=7, column=0, padx=10, pady=10)
 
-        department_entry = tk.Entry(add_patient_details_window)
-        department_entry.grid(row=7, column=1, padx=10, pady=10)
+        visit_department_entry = tk.Entry(add_patient_details_window)
+        visit_department_entry.grid(row=7, column=1, padx=10, pady=10)
 
         chief_complaint_label = tk.Label(add_patient_details_window, text="Chief Complaint:")
         chief_complaint_label.grid(row=8, column=0, padx=10, pady=10)
@@ -395,22 +410,25 @@ def main():
         chief_complaint_entry = tk.Entry(add_patient_details_window)
         chief_complaint_entry.grid(row=8, column=1, padx=10, pady=10)
 
-        add_patient_button = tk.Button(add_patient_details_window, text="Add Patient", command=lambda: add_new_patient(patient_id, gender_entry.get(), race_entry.get(), age_entry.get(), ethnicity_entry.get(), insurance_entry.get(), zip_code_entry.get(), visit_time_entry.get(), department_entry.get(), chief_complaint_entry.get(), add_patient_details_window))
+        add_patient_button = tk.Button(add_patient_details_window, text="Add Patient", command=lambda: add_patient_with_details(patient_id, gender_entry.get(), race_entry.get(), age_entry.get(), ethnicity_entry.get(), insurance_entry.get(), zip_code_entry.get(), visit_time_entry.get(), visit_department_entry.get(), chief_complaint_entry.get(), add_patient_details_window))
         add_patient_button.grid(row=9, column=0, columnspan=2, padx=10, pady=10)
 
-    def add_new_patient(patient_id, gender, race, age, ethnicity, insurance, zip_code, visit_time, visit_department, chief_complaint, window):
-        # Create new patient instance
+    def add_patient_with_details(patient_id, gender, race, age, ethnicity, insurance, zip_code, visit_time, visit_department, chief_complaint, window):
         patient = Patient(patient_id, gender, race, int(age), ethnicity, insurance, zip_code)
-
-        # Add visit
-        visit_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        visit = Visit(visit_id, datetime.strptime(visit_time, '%Y-%m-%d'), visit_department, chief_complaint)
-        patient.add_visit(visit)
-
         hospital.add_patient(patient)
-
-        messagebox.showinfo("Add Patient Result", "Patient added successfully.")
+        add_patient_ui(hospital, patient_id, visit_time, visit_department, chief_complaint)
+        messagebox.showinfo("Patient Added", "Patient added successfully.")
         window.destroy()
+        write_patient_data('Project_patient_information.csv', hospital)
+        write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Add Patient')
+        show_menu()  # Return to menu after action
+
+    def add_visit(patient_id, visit_time, visit_department, chief_complaint, window):
+        result = add_patient_ui(hospital, patient_id, visit_time, visit_department, chief_complaint)
+        messagebox.showinfo("Add Visit", result)
+        window.destroy()
+        write_patient_data('Project_patient_information.csv', hospital)
+        write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Add Visit')
         show_menu()  # Return to menu after action
 
     def remove_patient():
@@ -429,8 +447,10 @@ def main():
 
     def remove(patient_id, window):
         result = remove_patient_ui(hospital, patient_id)
-        messagebox.showinfo("Remove Patient Result", result)
+        messagebox.showinfo("Remove Patient", result)
         window.destroy()
+        write_patient_data('Project_patient_information.csv', hospital)
+        write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Remove Patient')
         show_menu()  # Return to menu after action
 
     def retrieve_patient():
@@ -449,8 +469,9 @@ def main():
 
     def retrieve(patient_id, window):
         result = retrieve_patient_ui(hospital, patient_id)
-        messagebox.showinfo("Retrieve Patient Result", result)
+        messagebox.showinfo("Retrieve Patient", result)
         window.destroy()
+        write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Retrieve Patient')
         show_menu()  # Return to menu after action
 
     def count_visits():
@@ -464,18 +485,18 @@ def main():
         visit_date_entry = tk.Entry(count_visits_window)
         visit_date_entry.pack(pady=10)
 
-        count_button = tk.Button(count_visits_window, text="Count", command=lambda: count(visit_date_entry.get(), count_visits_window))
+        count_button = tk.Button(count_visits_window, text="Count Visits", command=lambda: count(visit_date_entry.get(), count_visits_window))
         count_button.pack(pady=10)
 
     def count(visit_date, window):
         result = count_visits_ui(hospital, visit_date)
-        messagebox.showinfo("Count Visits Result", result)
+        messagebox.showinfo("Count Visits", result)
         window.destroy()
+        write_usage_statistics('usage_statistics.csv', username_entry.get(), current_user_role, 'Count Visits')
         show_menu()  # Return to menu after action
 
-    # Login window
     login_frame = tk.Frame(root)
-    login_frame.pack(pady=100)
+    login_frame.pack(pady=50)
 
     username_label = tk.Label(login_frame, text="Username:")
     username_label.grid(row=0, column=0, padx=10, pady=10)
